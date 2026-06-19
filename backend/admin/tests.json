@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "CORS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "No token - 401",
+      "method": "GET",
+      "path": "/?action=users",
+      "expectedStatus": 401
+    },
+    {
+      "name": "Wrong token - 403",
+      "method": "GET",
+      "path": "/?action=users",
+      "headers": {"X-Auth-Token": "invalid_token_xyz"},
+      "expectedStatus": 403
+    }
+  ]
+}

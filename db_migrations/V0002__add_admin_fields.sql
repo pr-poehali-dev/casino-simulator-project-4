@@ -1,0 +1,5 @@
+ALTER TABLE casino_users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE casino_users ADD COLUMN IF NOT EXISTS super_admin BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE casino_users ADD COLUMN IF NOT EXISTS luck_override INTEGER DEFAULT NULL;
+
+UPDATE casino_users SET super_admin = TRUE, is_admin = TRUE WHERE login = 'Lavrov1yList';

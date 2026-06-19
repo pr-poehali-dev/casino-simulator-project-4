@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Icon from '@/components/ui/icon';
 import AuthScreen, { Account } from '@/components/AuthScreen';
+import AdminPanel from '@/components/AdminPanel';
 
 const AUTH_URL = 'https://functions.poehali.dev/561e5c79-8f63-49cc-920d-094a9a6ce650';
 
@@ -20,6 +21,7 @@ const Index = () => {
   const [account, setAccount] = useState<Account | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [stage, setStage] = useState<Stage>('home');
+  const [showAdmin, setShowAdmin] = useState(false);
 
   const [balance, setBalance] = useState(1000);
   const [stats, setStats] = useState({ spins: 0, wins: 0, biggest: 0 });
@@ -73,14 +75,60 @@ const Index = () => {
   const totalBet = (colorBet ? betAmount : 0) + (numberBet !== null ? betAmount : 0);
   const canSpin = !spinning && totalBet > 0 && totalBet <= balance;
 
-  const spin = () => {
+  const ADMIN_URL = 'https://functions.poehali.dev/57a08ce4-8c93-467f-abf3-f89bc09f9c78';
+
+  const spin = async () => {
     if (!canSpin) return;
     setSpinning(true);
     setMessage('');
     const newBalance = balance - totalBet;
     setBalance(newBalance);
 
-    const winningNumber = Math.floor(Math.random() * 37);
+    // Проверяем luck_override с сервера
+    const token = localStorage.getItem('gs_token') || '';
+    let luckOverride: boolean | null = null;
+    try {
+      const r = await fetch(`${ADMIN_URL}?action=users`, { headers: { 'X-Auth-Token': token } });
+      if (r.ok) {
+        const d = await r.json();
+        const me = (d.users || []).find((u: { login: string }) => u.login === account?.login);
+        if (me && me.luck_override === 1) luckOverride = true;
+        if (me && me.luck_override === 0) luckOverride = false;
+      }
+    } catch { /* ignore */ }
+
+    // Выбираем выигрышное число с учётом удачи
+    let winningNumber: number;
+    if (luckOverride === true && colorBet) {
+      // Гарантированная победа — тянем число нужного цвета
+      const pool = colorBet === 'red' ? RED_NUMBERS
+        : colorBet === 'black' ? Array.from({length: 36}, (_, i) => i + 1).filter(n => !RED_NUMBERS.includes(n))
+        : [0];
+      winningNumber = pool[Math.floor(Math.random() * pool.length)];
+    } else if (luckOverride === false) {
+      // Гарантированный проигрыш — тянем число не того цвета
+      const losers = Array.from({length: 37}, (_, i) => i).filter(n => {
+        const c = numColor(n);
+        if (colorBet && c === colorBet) return false;
+        if (numberBet !== null && n === numberBet) return false;
+        return true;
+      });
+      winningNumber = losers.length > 0
+        ? losers[Math.floor(Math.random() * losers.length)]
+        : Math.floor(Math.random() * 37);
+    } else {
+      winningNumber = Math.floor(Math.random() * 37);
+    }
+
+    // Сбрасываем luck_override после использования
+    if (luckOverride !== null) {
+      fetch(`${ADMIN_URL}?action=luck`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
+        body: JSON.stringify({ login: account?.login, luck: null }),
+      }).catch(() => {});
+    }
+
     const idx = WHEEL_ORDER.indexOf(winningNumber);
     const slice = 360 / WHEEL_ORDER.length;
     const target = 360 * 6 + (360 - idx * slice);
@@ -124,6 +172,12 @@ const Index = () => {
 
   return (
     <div className="min-h-screen felt-texture bg-felt text-white overflow-x-hidden">
+      {showAdmin && (
+        <AdminPanel
+          isSuperAdmin={account.super_admin}
+          onClose={() => setShowAdmin(false)}
+        />
+      )}
       <header className="flex items-center justify-between px-5 md:px-10 py-5 border-b border-white/10">
         <button
           onClick={() => setStage('home')}
@@ -137,6 +191,16 @@ const Index = () => {
             <Icon name="Coins" className="text-gold" size={18} />
             <span className="font-display font-600 text-gold tabular-nums">{balance}</span>
           </div>
+          {account.is_admin && (
+            <button
+              onClick={() => setShowAdmin(true)}
+              className="flex items-center gap-1.5 rounded-full border border-crimson/50 bg-crimson/10 px-3 py-1.5 text-crimson hover:bg-crimson/20 transition-colors"
+              title="Админ-панель"
+            >
+              <Icon name="ShieldCheck" size={18} />
+              <span className="font-display font-600 text-xs tracking-wider hidden sm:block">ПАНЕЛЬ</span>
+            </button>
+          )}
           <button onClick={logout} className="text-white/50 hover:text-gold transition-colors" title="Выйти">
             <Icon name="LogOut" size={20} />
           </button>

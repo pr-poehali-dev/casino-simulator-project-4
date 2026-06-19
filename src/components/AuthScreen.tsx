@@ -10,6 +10,8 @@ export interface Account {
   wins: number;
   biggest: number;
   token: string;
+  is_admin: boolean;
+  super_admin: boolean;
 }
 
 interface Props {
