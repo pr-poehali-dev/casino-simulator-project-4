@@ -1,0 +1,26 @@
+{
+  "tests": [
+    {
+      "name": "CORS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Register new user",
+      "method": "POST",
+      "path": "/?action=register",
+      "body": {"login": "tester_one", "password": "secret123"},
+      "expectedStatus": 200,
+      "expectedBody": {"login": "tester_one", "balance": 1000},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Login no auth needs valid creds",
+      "method": "POST",
+      "path": "/?action=login",
+      "body": {"login": "tester_one", "password": "wrongpass"},
+      "expectedStatus": 401
+    }
+  ]
+}

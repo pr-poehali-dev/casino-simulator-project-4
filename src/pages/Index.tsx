@@ -1,5 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Icon from '@/components/ui/icon';
+import AuthScreen, { Account } from '@/components/AuthScreen';
+
+const AUTH_URL = 'https://functions.poehali.dev/561e5c79-8f63-49cc-920d-094a9a6ce650';
 
 const RED_NUMBERS = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
 const WHEEL_ORDER = [
@@ -8,28 +11,74 @@ const WHEEL_ORDER = [
 ];
 
 type Stage = 'home' | 'game';
-type BetType = 'red' | 'black' | 'green' | null;
+type ColorBet = 'red' | 'black' | 'green';
 
 const numColor = (n: number) =>
   n === 0 ? 'green' : RED_NUMBERS.includes(n) ? 'red' : 'black';
 
 const Index = () => {
+  const [account, setAccount] = useState<Account | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [stage, setStage] = useState<Stage>('home');
+
   const [balance, setBalance] = useState(1000);
+  const [stats, setStats] = useState({ spins: 0, wins: 0, biggest: 0 });
+
   const [betAmount, setBetAmount] = useState(50);
-  const [bet, setBet] = useState<BetType>(null);
+  const [colorBet, setColorBet] = useState<ColorBet | null>(null);
+  const [numberBet, setNumberBet] = useState<number | null>(null);
+
   const [spinning, setSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
-  const [result, setResult] = useState<number | null>(null);
   const [message, setMessage] = useState('');
-  const [stats, setStats] = useState({ spins: 0, wins: 0, biggest: 0 });
-  const wheelRef = useRef<HTMLDivElement>(null);
+
+  const applyAccount = (acc: Account) => {
+    setAccount(acc);
+    setBalance(acc.balance);
+    setStats({ spins: acc.spins, wins: acc.wins, biggest: acc.biggest });
+  };
+
+  useEffect(() => {
+    const token = localStorage.getItem('gs_token');
+    if (!token) {
+      setAuthChecked(true);
+      return;
+    }
+    fetch(`${AUTH_URL}?action=me`, { headers: { 'X-Auth-Token': token } })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((data: Account) => applyAccount(data))
+      .catch(() => localStorage.removeItem('gs_token'))
+      .finally(() => setAuthChecked(true));
+  }, []);
+
+  const save = useCallback(
+    (b: number, s: { spins: number; wins: number; biggest: number }) => {
+      const token = localStorage.getItem('gs_token');
+      if (!token) return;
+      fetch(`${AUTH_URL}?action=save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
+        body: JSON.stringify({ balance: b, ...s }),
+      }).catch(() => {});
+    },
+    [],
+  );
+
+  const logout = () => {
+    localStorage.removeItem('gs_token');
+    setAccount(null);
+    setStage('home');
+  };
+
+  const totalBet = (colorBet ? betAmount : 0) + (numberBet !== null ? betAmount : 0);
+  const canSpin = !spinning && totalBet > 0 && totalBet <= balance;
 
   const spin = () => {
-    if (spinning || !bet || betAmount <= 0 || betAmount > balance) return;
+    if (!canSpin) return;
     setSpinning(true);
     setMessage('');
-    setBalance((b) => b - betAmount);
+    const newBalance = balance - totalBet;
+    setBalance(newBalance);
 
     const winningNumber = Math.floor(Math.random() * 37);
     const idx = WHEEL_ORDER.indexOf(winningNumber);
@@ -39,27 +88,42 @@ const Index = () => {
 
     setTimeout(() => {
       const color = numColor(winningNumber);
-      const won = color === bet;
-      const payout = won ? (bet === 'green' ? betAmount * 35 : betAmount * 2) : 0;
-      setResult(winningNumber);
+      let payout = 0;
+      if (colorBet && color === colorBet) payout += colorBet === 'green' ? betAmount * 35 : betAmount * 2;
+      if (numberBet !== null && numberBet === winningNumber) payout += betAmount * 36;
+
+      const won = payout > 0;
+      const finalBalance = newBalance + payout;
+      const newStats = {
+        spins: stats.spins + 1,
+        wins: stats.wins + (won ? 1 : 0),
+        biggest: Math.max(stats.biggest, payout),
+      };
+      setBalance(finalBalance);
+      setStats(newStats);
       setSpinning(false);
-      setBalance((b) => b + payout);
-      setStats((s) => ({
-        spins: s.spins + 1,
-        wins: s.wins + (won ? 1 : 0),
-        biggest: Math.max(s.biggest, payout),
-      }));
+      const colorRu = color === 'red' ? 'красное' : color === 'black' ? 'чёрное' : 'зеро';
       setMessage(
         won
-          ? `Выпало ${winningNumber} (${color === 'red' ? 'красное' : color === 'black' ? 'чёрное' : 'зеро'}) — выигрыш ${payout} 🪙`
-          : `Выпало ${winningNumber} (${color === 'red' ? 'красное' : color === 'black' ? 'чёрное' : 'зеро'}) — увы`,
+          ? `Выпало ${winningNumber} (${colorRu}) — выигрыш ${payout} 🪙`
+          : `Выпало ${winningNumber} (${colorRu}) — увы, мимо`,
       );
+      save(finalBalance, newStats);
     }, 4200);
   };
 
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-felt flex items-center justify-center text-gold font-display tracking-widest">
+        ЗАГРУЗКА...
+      </div>
+    );
+  }
+
+  if (!account) return <AuthScreen onAuth={applyAccount} />;
+
   return (
     <div className="min-h-screen felt-texture bg-felt text-white overflow-x-hidden">
-      {/* Top bar */}
       <header className="flex items-center justify-between px-5 md:px-10 py-5 border-b border-white/10">
         <button
           onClick={() => setStage('home')}
@@ -68,18 +132,23 @@ const Index = () => {
           <Icon name="Diamond" className="text-gold" size={24} />
           <span className="text-gold-shimmer">GOLDEN SPIN</span>
         </button>
-        <div className="flex items-center gap-2 rounded-full border border-gold/40 bg-black/40 px-4 py-1.5">
-          <Icon name="Coins" className="text-gold" size={18} />
-          <span className="font-display font-600 text-gold tabular-nums">{balance}</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 rounded-full border border-gold/40 bg-black/40 px-4 py-1.5">
+            <Icon name="Coins" className="text-gold" size={18} />
+            <span className="font-display font-600 text-gold tabular-nums">{balance}</span>
+          </div>
+          <button onClick={logout} className="text-white/50 hover:text-gold transition-colors" title="Выйти">
+            <Icon name="LogOut" size={20} />
+          </button>
         </div>
       </header>
 
       {stage === 'home' ? (
-        <main className="relative flex flex-col items-center text-center px-6 pt-20 pb-24">
+        <main className="relative flex flex-col items-center text-center px-6 pt-16 pb-24">
           <div className="absolute top-10 h-72 w-72 rounded-full bg-crimson/30 blur-[120px]" />
           <div className="absolute top-40 h-72 w-72 rounded-full bg-gold/20 blur-[120px]" />
           <p className="relative font-display tracking-[0.4em] text-gold/80 text-sm mb-4 animate-fade-in">
-            ДОБРО ПОЖАЛОВАТЬ В
+            С ВОЗВРАЩЕНИЕМ, {account.login.toUpperCase()}
           </p>
           <h1 className="relative font-display font-700 leading-none text-6xl md:text-8xl animate-fade-in" style={{ animationDelay: '0.1s', opacity: 0 }}>
             <span className="text-gold-shimmer">GOLDEN</span>
@@ -87,8 +156,8 @@ const Index = () => {
             <span className="text-crimson drop-shadow-[0_0_30px_rgba(209,26,42,0.6)]">SPIN</span>
           </h1>
           <p className="relative mt-6 max-w-md text-white/60 animate-fade-in" style={{ animationDelay: '0.25s', opacity: 0 }}>
-            Классическая рулетка с красными и чёрными ячейками. Делай ставку,
-            крути колесо и испытай удачу.
+            Ставь на цвет или конкретное число. Крути колесо и испытай удачу.
+            Твой прогресс сохраняется автоматически.
           </p>
 
           <div className="relative my-12 animate-glow-pulse">
@@ -99,7 +168,7 @@ const Index = () => {
 
           <button
             onClick={() => setStage('game')}
-            className="relative group rounded-full bg-gold px-10 py-4 font-display font-600 tracking-widest text-black text-lg transition-transform hover:scale-105 shadow-[0_0_40px_rgba(255,199,0,0.4)] animate-fade-in"
+            className="relative rounded-full bg-gold px-10 py-4 font-display font-600 tracking-widest text-black text-lg transition-transform hover:scale-105 shadow-[0_0_40px_rgba(255,199,0,0.4)] animate-fade-in"
             style={{ animationDelay: '0.4s', opacity: 0 }}
           >
             ВОЙТИ В КАЗИНО
@@ -120,13 +189,11 @@ const Index = () => {
         </main>
       ) : (
         <main className="flex flex-col items-center px-6 pt-10 pb-24 max-w-3xl mx-auto">
-          {/* Wheel */}
           <div className="relative">
             <div className="absolute left-1/2 -top-3 z-20 -translate-x-1/2">
               <Icon name="Triangle" className="rotate-180 text-gold drop-shadow" size={28} />
             </div>
             <div
-              ref={wheelRef}
               className="h-72 w-72 md:h-80 md:w-80 rounded-full border-[10px] border-gold shadow-[0_0_60px_rgba(255,199,0,0.25)]"
               style={{
                 transform: `rotate(${rotation}deg)`,
@@ -145,14 +212,11 @@ const Index = () => {
           </div>
 
           {message && (
-            <p className="mt-6 text-center font-display tracking-wide text-lg animate-fade-in">
-              {message}
-            </p>
+            <p className="mt-6 text-center font-display tracking-wide text-lg animate-fade-in">{message}</p>
           )}
 
-          {/* Bet selection */}
           <div className="mt-8 w-full">
-            <p className="text-center text-white/50 text-sm mb-3">Выбери цвет</p>
+            <p className="text-center text-white/50 text-sm mb-3">Ставка на цвет</p>
             <div className="grid grid-cols-3 gap-3">
               {([
                 { t: 'red', label: 'Красное', cls: 'bg-crimson', mult: 'x2' },
@@ -162,9 +226,9 @@ const Index = () => {
                 <button
                   key={o.t}
                   disabled={spinning}
-                  onClick={() => setBet(o.t)}
+                  onClick={() => setColorBet(colorBet === o.t ? null : o.t)}
                   className={`rounded-xl py-4 font-display font-600 tracking-wide transition-all ${o.cls} ${
-                    bet === o.t ? 'ring-4 ring-gold scale-105' : 'opacity-80 hover:opacity-100'
+                    colorBet === o.t ? 'ring-4 ring-gold scale-105' : 'opacity-80 hover:opacity-100'
                   }`}
                 >
                   {o.label}
@@ -174,9 +238,37 @@ const Index = () => {
             </div>
           </div>
 
-          {/* Bet amount */}
           <div className="mt-6 w-full">
-            <p className="text-center text-white/50 text-sm mb-3">Сумма ставки</p>
+            <p className="text-center text-white/50 text-sm mb-3">
+              Ставка на число <span className="text-gold">x36</span>
+            </p>
+            <div className="grid grid-cols-[repeat(13,minmax(0,1fr))] gap-1.5">
+              {Array.from({ length: 37 }, (_, n) => n).map((n) => {
+                const c = numColor(n);
+                const base = c === 'red' ? 'bg-crimson' : c === 'black' ? 'bg-black border border-white/20' : 'bg-[#0a7d34]';
+                return (
+                  <button
+                    key={n}
+                    disabled={spinning}
+                    onClick={() => setNumberBet(numberBet === n ? null : n)}
+                    className={`aspect-square rounded-md text-xs font-display font-600 tabular-nums transition-all ${base} ${
+                      numberBet === n ? 'ring-2 ring-gold scale-110 z-10' : 'opacity-75 hover:opacity-100'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                );
+              })}
+            </div>
+            {numberBet !== null && (
+              <p className="text-center text-gold text-sm mt-3 font-display tracking-wide">
+                Выбрано число: {numberBet}
+              </p>
+            )}
+          </div>
+
+          <div className="mt-6 w-full">
+            <p className="text-center text-white/50 text-sm mb-3">Размер ставки (на каждую позицию)</p>
             <div className="flex flex-wrap justify-center gap-3">
               {[10, 50, 100, 250].map((v) => (
                 <button
@@ -193,24 +285,28 @@ const Index = () => {
                 </button>
               ))}
             </div>
+            {totalBet > 0 && (
+              <p className="text-center text-white/60 text-sm mt-4">
+                Общая ставка: <span className="text-gold font-600">{totalBet} 🪙</span>
+              </p>
+            )}
           </div>
 
           <button
             onClick={spin}
-            disabled={spinning || !bet || betAmount > balance}
+            disabled={!canSpin}
             className="mt-8 w-full max-w-xs rounded-full bg-gold py-4 font-display font-700 tracking-widest text-black text-lg transition-transform enabled:hover:scale-105 disabled:opacity-40 shadow-[0_0_40px_rgba(255,199,0,0.35)]"
           >
-            {spinning ? 'КРУТИТСЯ...' : balance < betAmount ? 'НЕТ ФИШЕК' : 'КРУТИТЬ'}
+            {spinning ? 'КРУТИТСЯ...' : totalBet > balance ? 'НЕ ХВАТАЕТ ФИШЕК' : totalBet === 0 ? 'СДЕЛАЙ СТАВКУ' : 'КРУТИТЬ'}
           </button>
 
-          {/* Player profile */}
           <section className="mt-12 w-full rounded-2xl border border-white/10 bg-black/30 p-6">
             <div className="flex items-center gap-3 mb-5">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-gold to-crimson">
                 <Icon name="User" className="text-black" size={24} />
               </div>
               <div>
-                <p className="font-display font-600 tracking-wide">Игрок</p>
+                <p className="font-display font-600 tracking-wide">{account.login}</p>
                 <p className="text-xs text-white/50">Профиль и статистика</p>
               </div>
             </div>
