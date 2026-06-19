@@ -23,6 +23,7 @@ const AdminPanel = ({ isSuperAdmin, onClose }: Props) => {
   const [msg, setMsg] = useState('');
   const [msgOk, setMsgOk] = useState(true);
 
+  const [search, setSearch] = useState('');
   const [chipsTarget, setChipsTarget] = useState('');
   const [chipsAmount, setChipsAmount] = useState('');
 
@@ -208,9 +209,25 @@ const AdminPanel = ({ isSuperAdmin, onClose }: Props) => {
 
         {/* User list */}
         <section>
-          <p className="font-display font-600 tracking-wide text-white mb-3 flex items-center gap-2">
-            <Icon name="Users" className="text-gold" size={18} /> Игроки ({users.length})
-          </p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="font-display font-600 tracking-wide text-white flex items-center gap-2">
+              <Icon name="Users" className="text-gold" size={18} /> Игроки ({users.length})
+            </p>
+            <div className="flex items-center gap-2 rounded-lg border border-white/15 bg-black/40 px-3 py-1.5 focus-within:border-gold/60 w-48">
+              <Icon name="Search" className="text-white/40 shrink-0" size={14} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Поиск..."
+                className="w-full bg-transparent text-white text-sm outline-none placeholder:text-white/30"
+              />
+              {search && (
+                <button onClick={() => setSearch('')} className="text-white/30 hover:text-white transition-colors">
+                  <Icon name="X" size={13} />
+                </button>
+              )}
+            </div>
+          </div>
           {loading ? (
             <p className="text-white/40 text-sm text-center py-4">Загружаю...</p>
           ) : (
@@ -225,7 +242,7 @@ const AdminPanel = ({ isSuperAdmin, onClose }: Props) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => (
+                  {users.filter(u => u.login.toLowerCase().includes(search.toLowerCase())).map((u) => (
                     <tr
                       key={u.login}
                       onClick={() => { setChipsTarget(u.login); setLuckTarget(u.login); setAdminTarget(u.login); }}
