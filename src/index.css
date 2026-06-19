@@ -96,6 +96,37 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
   }
+}
+
+.text-gold-shimmer {
+  background: linear-gradient(
+    90deg,
+    #b8860b,
+    #ffc700,
+    #fff3b0,
+    #ffc700,
+    #b8860b
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 4s linear infinite;
+}
+
+.felt-texture {
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(209, 26, 42, 0.18), transparent 60%),
+    radial-gradient(
+      circle at 20% 80%,
+      rgba(255, 199, 0, 0.08),
+      transparent 50%
+    ),
+    repeating-radial-gradient(
+      circle at 50% 50%,
+      rgba(255, 255, 255, 0.012) 0 2px,
+      transparent 2px 4px
+    );
 }
