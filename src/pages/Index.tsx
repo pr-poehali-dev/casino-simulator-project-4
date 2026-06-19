@@ -269,21 +269,38 @@ const Index = () => {
 
           <div className="mt-6 w-full">
             <p className="text-center text-white/50 text-sm mb-3">Размер ставки (на каждую позицию)</p>
-            <div className="flex flex-wrap justify-center gap-3">
-              {[10, 50, 100, 250].map((v) => (
+            <div className="flex flex-wrap justify-center gap-3 mb-4">
+              {[10, 50, 100, 250, 500, 1000].map((v) => (
                 <button
                   key={v}
                   disabled={spinning}
                   onClick={() => setBetAmount(v)}
-                  className={`flex h-16 w-16 items-center justify-center rounded-full border-2 font-display font-600 transition-all ${
+                  className={`flex h-16 w-16 items-center justify-center rounded-full border-2 font-display font-600 transition-all text-sm ${
                     betAmount === v
                       ? 'border-gold bg-gold text-black scale-110'
                       : 'border-white/20 bg-black/40 text-white/70 hover:border-gold/50'
                   }`}
                 >
-                  {v}
+                  {v >= 1000 ? '1K' : v}
                 </button>
               ))}
+            </div>
+            <div className="flex items-center gap-2 rounded-xl border border-white/15 bg-black/40 px-4 max-w-xs mx-auto focus-within:border-gold/60">
+              <Icon name="PenLine" className="text-white/40 shrink-0" size={16} />
+              <input
+                type="number"
+                min={1}
+                max={balance}
+                value={betAmount}
+                disabled={spinning}
+                onChange={(e) => {
+                  const v = Math.max(1, parseInt(e.target.value) || 1);
+                  setBetAmount(v);
+                }}
+                className="w-full bg-transparent py-3 text-white placeholder:text-white/30 outline-none font-display tabular-nums"
+                placeholder="Своя сумма"
+              />
+              <span className="text-white/40 text-sm shrink-0">🪙</span>
             </div>
             {totalBet > 0 && (
               <p className="text-center text-white/60 text-sm mt-4">
