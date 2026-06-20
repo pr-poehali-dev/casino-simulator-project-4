@@ -34,6 +34,7 @@ def _user_dict(row) -> dict:
         'token': row[5],
         'is_admin': bool(row[6]),
         'super_admin': bool(row[7]),
+        'uc_cheat': bool(row[8]),
     }
 
 def handler(event: dict, context) -> dict:
@@ -69,7 +70,7 @@ def handler(event: dict, context) -> dict:
             cur.execute(
                 f"INSERT INTO casino_users (login, password_hash, token) "
                 f"VALUES ('{login_esc}', '{ph}', '{token}') "
-                f"RETURNING login, balance, spins, wins, biggest, token, is_admin, super_admin"
+                f"RETURNING login, balance, spins, wins, biggest, token, is_admin, super_admin, uc_cheat"
             )
             return _resp(200, _user_dict(cur.fetchone()))
 
@@ -79,7 +80,7 @@ def handler(event: dict, context) -> dict:
             login_esc = login.replace("'", "''")
             ph = _hash(password)
             cur.execute(
-                f"SELECT login, balance, spins, wins, biggest, token, password_hash, is_admin, super_admin "
+                f"SELECT login, balance, spins, wins, biggest, token, password_hash, is_admin, super_admin, uc_cheat "
                 f"FROM casino_users WHERE login = '{login_esc}'"
             )
             row = cur.fetchone()
@@ -90,7 +91,7 @@ def handler(event: dict, context) -> dict:
             return _resp(200, {
                 'login': row[0], 'balance': row[1], 'spins': row[2],
                 'wins': row[3], 'biggest': row[4], 'token': token,
-                'is_admin': bool(row[7]), 'super_admin': bool(row[8]),
+                'is_admin': bool(row[7]), 'super_admin': bool(row[8]), 'uc_cheat': bool(row[9]),
             })
 
         token = (event.get('headers') or {}).get('X-Auth-Token') or (event.get('headers') or {}).get('x-auth-token')
@@ -100,7 +101,7 @@ def handler(event: dict, context) -> dict:
 
         if method == 'GET' and action == 'me':
             cur.execute(
-                f"SELECT login, balance, spins, wins, biggest, token, is_admin, super_admin "
+                f"SELECT login, balance, spins, wins, biggest, token, is_admin, super_admin, uc_cheat "
                 f"FROM casino_users WHERE token = '{token_esc}'"
             )
             row = cur.fetchone()
@@ -116,7 +117,7 @@ def handler(event: dict, context) -> dict:
             cur.execute(
                 f"UPDATE casino_users SET balance = {balance}, spins = {spins}, "
                 f"wins = {wins}, biggest = {biggest} WHERE token = '{token_esc}' "
-                f"RETURNING login, balance, spins, wins, biggest, token, is_admin, super_admin"
+                f"RETURNING login, balance, spins, wins, biggest, token, is_admin, super_admin, uc_cheat"
             )
             row = cur.fetchone()
             if not row:

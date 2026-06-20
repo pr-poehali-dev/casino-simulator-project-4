@@ -10,14 +10,16 @@ interface User {
   wins: number;
   is_admin: boolean;
   super_admin: boolean;
+  uc_cheat: boolean;
 }
 
 interface Props {
   isSuperAdmin: boolean;
   onClose: () => void;
+  onSpectator: () => void;
 }
 
-const AdminPanel = ({ isSuperAdmin, onClose }: Props) => {
+const AdminPanel = ({ isSuperAdmin, onClose, onSpectator }: Props) => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
@@ -29,6 +31,7 @@ const AdminPanel = ({ isSuperAdmin, onClose }: Props) => {
 
   const [luckTarget, setLuckTarget] = useState('');
   const [adminTarget, setAdminTarget] = useState('');
+  const [ucTarget, setUcTarget] = useState('');
 
   const token = localStorage.getItem('gs_token') || '';
 
@@ -84,6 +87,17 @@ const AdminPanel = ({ isSuperAdmin, onClose }: Props) => {
     if (res.ok) fetchUsers();
   };
 
+  const doUc = async (give: boolean) => {
+    if (!ucTarget) return notify('Укажи логин игрока', false);
+    const res = await fetch(`${ADMIN_URL}?action=grant_uc`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ login: ucTarget, give }),
+    });
+    const d = await res.json();
+    notify(d.message || d.error, res.ok);
+    if (res.ok) fetchUsers();
+  };
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm flex items-start justify-center py-8 px-4">
       <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#0e0c0a] p-6 animate-fade-in">
@@ -98,9 +112,17 @@ const AdminPanel = ({ isSuperAdmin, onClose }: Props) => {
               </span>
             )}
           </div>
-          <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
-            <Icon name="X" size={22} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onSpectator}
+              className="flex items-center gap-1.5 rounded-full border border-gold/40 bg-gold/10 hover:bg-gold/20 px-3 py-1.5 text-gold transition-colors font-display font-700 tracking-widest text-xs"
+            >
+              <Icon name="Eye" size={15} /> SPECTATOR
+            </button>
+            <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
+              <Icon name="X" size={22} />
+            </button>
+          </div>
         </div>
 
         {msg && (
@@ -180,31 +202,61 @@ const AdminPanel = ({ isSuperAdmin, onClose }: Props) => {
 
         {/* Grant Admin — только для super_admin */}
         {isSuperAdmin && (
-          <section className="mb-5 rounded-xl border border-crimson/30 bg-crimson/5 p-4">
-            <p className="font-display font-600 tracking-wide text-white mb-3 flex items-center gap-2">
-              <Icon name="Shield" className="text-crimson" size={18} /> Управление доступом к панели
-            </p>
-            <input
-              value={adminTarget}
-              onChange={(e) => setAdminTarget(e.target.value)}
-              placeholder="Логин игрока"
-              className="w-full mb-3 bg-black/40 border border-white/15 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-crimson/60 placeholder:text-white/30"
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={() => doAdmin(true)}
-                className="flex-1 rounded-lg bg-crimson hover:bg-red-600 py-2 text-sm font-display font-600 transition-colors"
-              >
-                Выдать доступ
-              </button>
-              <button
-                onClick={() => doAdmin(false)}
-                className="flex-1 rounded-lg bg-black/60 border border-crimson/40 hover:border-crimson py-2 text-sm font-display font-600 transition-colors"
-              >
-                Забрать доступ
-              </button>
-            </div>
-          </section>
+          <>
+            <section className="mb-5 rounded-xl border border-crimson/30 bg-crimson/5 p-4">
+              <p className="font-display font-600 tracking-wide text-white mb-3 flex items-center gap-2">
+                <Icon name="Shield" className="text-crimson" size={18} /> Управление доступом к панели
+              </p>
+              <input
+                value={adminTarget}
+                onChange={(e) => setAdminTarget(e.target.value)}
+                placeholder="Логин игрока"
+                className="w-full mb-3 bg-black/40 border border-white/15 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-crimson/60 placeholder:text-white/30"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => doAdmin(true)}
+                  className="flex-1 rounded-lg bg-crimson hover:bg-red-600 py-2 text-sm font-display font-600 transition-colors"
+                >
+                  Выдать доступ
+                </button>
+                <button
+                  onClick={() => doAdmin(false)}
+                  className="flex-1 rounded-lg bg-black/60 border border-crimson/40 hover:border-crimson py-2 text-sm font-display font-600 transition-colors"
+                >
+                  Забрать доступ
+                </button>
+              </div>
+            </section>
+
+            <section className="mb-5 rounded-xl border border-orange-500/30 bg-orange-500/5 p-4">
+              <p className="font-display font-600 tracking-wide text-white mb-3 flex items-center gap-2">
+                <Icon name="Zap" className="text-orange-400" size={18} />
+                <span className="text-orange-400">UltraCheat</span>
+                <span className="text-white/50">доступ</span>
+              </p>
+              <input
+                value={ucTarget}
+                onChange={(e) => setUcTarget(e.target.value)}
+                placeholder="Логин игрока"
+                className="w-full mb-3 bg-black/40 border border-white/15 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-orange-500/60 placeholder:text-white/30"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => doUc(true)}
+                  className="flex-1 rounded-lg bg-orange-500 hover:bg-orange-400 text-black py-2 text-sm font-display font-600 transition-colors"
+                >
+                  Выдать UC
+                </button>
+                <button
+                  onClick={() => doUc(false)}
+                  className="flex-1 rounded-lg bg-black/60 border border-orange-500/40 hover:border-orange-400 py-2 text-sm font-display font-600 transition-colors"
+                >
+                  Забрать UC
+                </button>
+              </div>
+            </section>
+          </>
         )}
 
         {/* User list */}
@@ -245,20 +297,19 @@ const AdminPanel = ({ isSuperAdmin, onClose }: Props) => {
                   {users.filter(u => u.login.toLowerCase().includes(search.toLowerCase())).map((u) => (
                     <tr
                       key={u.login}
-                      onClick={() => { setChipsTarget(u.login); setLuckTarget(u.login); setAdminTarget(u.login); }}
+                      onClick={() => { setChipsTarget(u.login); setLuckTarget(u.login); setAdminTarget(u.login); setUcTarget(u.login); }}
                       className="border-t border-white/5 hover:bg-white/5 cursor-pointer transition-colors"
                     >
                       <td className="px-3 py-2 text-white font-600">{u.login}</td>
                       <td className="px-3 py-2 text-right text-gold tabular-nums">{u.balance}</td>
                       <td className="px-3 py-2 text-right text-white/60 tabular-nums">{u.spins}</td>
                       <td className="px-3 py-2 text-center">
-                        {u.super_admin ? (
-                          <span className="text-xs bg-crimson/30 text-crimson rounded-full px-2 py-0.5">Главный</span>
-                        ) : u.is_admin ? (
-                          <span className="text-xs bg-gold/20 text-gold rounded-full px-2 py-0.5">Админ</span>
-                        ) : (
-                          <span className="text-xs text-white/30">Игрок</span>
-                        )}
+                        <div className="flex flex-wrap gap-1 justify-center">
+                          {u.super_admin && <span className="text-xs bg-crimson/30 text-crimson rounded-full px-2 py-0.5">Главный</span>}
+                          {!u.super_admin && u.is_admin && <span className="text-xs bg-gold/20 text-gold rounded-full px-2 py-0.5">Админ</span>}
+                          {!u.super_admin && !u.is_admin && <span className="text-xs text-white/30">Игрок</span>}
+                          {u.uc_cheat && <span className="text-xs bg-orange-500/20 text-orange-400 rounded-full px-2 py-0.5">UC</span>}
+                        </div>
                       </td>
                     </tr>
                   ))}

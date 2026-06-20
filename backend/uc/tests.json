@@ -1,0 +1,7 @@
+{
+  "tests": [
+    {"name": "CORS", "method": "OPTIONS", "path": "/", "expectedStatus": 200},
+    {"name": "No token", "method": "GET", "path": "/?action=status", "expectedStatus": 401},
+    {"name": "Bad token", "method": "GET", "path": "/?action=status", "headers": {"X-Auth-Token": "bad"}, "expectedStatus": 401}
+  ]
+}

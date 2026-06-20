@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Icon from '@/components/ui/icon';
 import AuthScreen, { Account } from '@/components/AuthScreen';
 import AdminPanel from '@/components/AdminPanel';
+import SpectatorMode from '@/components/SpectatorMode';
+import UltraCheat from '@/components/UltraCheat';
 
 const AUTH_URL = 'https://functions.poehali.dev/561e5c79-8f63-49cc-920d-094a9a6ce650';
+const ADMIN_URL = 'https://functions.poehali.dev/57a08ce4-8c93-467f-abf3-f89bc09f9c78';
 
 const RED_NUMBERS = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
 const WHEEL_ORDER = [
@@ -17,11 +20,19 @@ type ColorBet = 'red' | 'black' | 'green';
 const numColor = (n: number) =>
   n === 0 ? 'green' : RED_NUMBERS.includes(n) ? 'red' : 'black';
 
+interface TrollState {
+  blackb: boolean;
+  block: boolean;
+  lucky_spins: number;
+  unlucky_spins: number;
+}
+
 const Index = () => {
   const [account, setAccount] = useState<Account | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [stage, setStage] = useState<Stage>('home');
   const [showAdmin, setShowAdmin] = useState(false);
+  const [showSpectator, setShowSpectator] = useState(false);
 
   const [balance, setBalance] = useState(1000);
   const [stats, setStats] = useState({ spins: 0, wins: 0, biggest: 0 });
@@ -34,48 +45,88 @@ const Index = () => {
   const [rotation, setRotation] = useState(0);
   const [message, setMessage] = useState('');
 
+  // Troll effects
+  const [troll, setTroll] = useState<TrollState>({ blackb: false, block: false, lucky_spins: 0, unlucky_spins: 0 });
+  const trollPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const applyAccount = (acc: Account) => {
     setAccount(acc);
     setBalance(acc.balance);
     setStats({ spins: acc.spins, wins: acc.wins, biggest: acc.biggest });
   };
 
-  useEffect(() => {
+  // Poll troll effects every 4s
+  const pollTroll = useCallback((login: string) => {
     const token = localStorage.getItem('gs_token');
-    if (!token) {
-      setAuthChecked(true);
-      return;
-    }
-    fetch(`${AUTH_URL}?action=me`, { headers: { 'X-Auth-Token': token } })
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data: Account) => applyAccount(data))
-      .catch(() => localStorage.removeItem('gs_token'))
-      .finally(() => setAuthChecked(true));
+    if (!token) return;
+    fetch(`${ADMIN_URL}?action=spectate&login=${encodeURIComponent(login)}`, {
+      headers: { 'X-Auth-Token': token },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return;
+        setTroll({
+          blackb: !!d.troll_blackb,
+          block: !!d.troll_block,
+          lucky_spins: d.troll_lucky_spins || 0,
+          unlucky_spins: d.troll_unlucky_spins || 0,
+        });
+        setBalance(prev => d.balance !== undefined ? d.balance : prev);
+        // "good" troll: token was reset, kick out
+        if (d.troll_blackb === undefined && !d.login) {
+          localStorage.removeItem('gs_token');
+          setAccount(null);
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  const save = useCallback(
-    (b: number, s: { spins: number; wins: number; biggest: number }) => {
+  useEffect(() => {
+    const token = localStorage.getItem('gs_token');
+    if (!token) { setAuthChecked(true); return; }
+    fetch(`${AUTH_URL}?action=me`, { headers: { 'X-Auth-Token': token } })
+      .then(r => (r.ok ? r.json() : Promise.reject()))
+      .then((data: Account) => {
+        applyAccount(data);
+        trollPollRef.current = setInterval(() => pollTroll(data.login), 4000);
+      })
+      .catch(() => localStorage.removeItem('gs_token'))
+      .finally(() => setAuthChecked(true));
+    return () => { if (trollPollRef.current) clearInterval(trollPollRef.current); };
+  }, [pollTroll]);
+
+  // Check if kicked (token reset by "good" troll)
+  useEffect(() => {
+    if (!account) return;
+    const iv = setInterval(() => {
       const token = localStorage.getItem('gs_token');
-      if (!token) return;
-      fetch(`${AUTH_URL}?action=save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
-        body: JSON.stringify({ balance: b, ...s }),
-      }).catch(() => {});
-    },
-    [],
-  );
+      if (!token) { setAccount(null); return; }
+      fetch(`${AUTH_URL}?action=me`, { headers: { 'X-Auth-Token': token } })
+        .then(r => { if (!r.ok) { localStorage.removeItem('gs_token'); setAccount(null); } })
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(iv);
+  }, [account?.login]);
+
+  const save = useCallback((b: number, s: { spins: number; wins: number; biggest: number }) => {
+    const token = localStorage.getItem('gs_token');
+    if (!token) return;
+    fetch(`${AUTH_URL}?action=save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
+      body: JSON.stringify({ balance: b, ...s }),
+    }).catch(() => {});
+  }, []);
 
   const logout = () => {
+    if (trollPollRef.current) clearInterval(trollPollRef.current);
     localStorage.removeItem('gs_token');
     setAccount(null);
     setStage('home');
   };
 
   const totalBet = (colorBet ? betAmount : 0) + (numberBet !== null ? betAmount : 0);
-  const canSpin = !spinning && totalBet > 0 && totalBet <= balance;
-
-  const ADMIN_URL = 'https://functions.poehali.dev/57a08ce4-8c93-467f-abf3-f89bc09f9c78';
+  const canSpin = !spinning && totalBet > 0 && totalBet <= balance && !troll.block;
 
   const spin = async () => {
     if (!canSpin) return;
@@ -84,55 +135,71 @@ const Index = () => {
     const newBalance = balance - totalBet;
     setBalance(newBalance);
 
-    // Проверяем luck_override с сервера
     const token = localStorage.getItem('gs_token') || '';
+
+    // Определяем luck: luck_override (от админа/UC) или troll_lucky/unlucky
     let luckOverride: boolean | null = null;
     try {
-      const r = await fetch(`${ADMIN_URL}?action=users`, { headers: { 'X-Auth-Token': token } });
+      const r = await fetch(`${ADMIN_URL}?action=spectate&login=${encodeURIComponent(account?.login || '')}`, {
+        headers: { 'X-Auth-Token': token },
+      });
       if (r.ok) {
         const d = await r.json();
-        const me = (d.users || []).find((u: { login: string }) => u.login === account?.login);
-        if (me && me.luck_override === 1) luckOverride = true;
-        if (me && me.luck_override === 0) luckOverride = false;
+        const lo = d.luck_override;
+        if (lo === 1) luckOverride = true;
+        else if (lo === 0) luckOverride = false;
+        else if (d.troll_lucky_spins > 0) luckOverride = true;
+        else if (d.troll_unlucky_spins > 0) luckOverride = false;
+
+        setTroll({
+          blackb: !!d.troll_blackb,
+          block: !!d.troll_block,
+          lucky_spins: d.troll_lucky_spins || 0,
+          unlucky_spins: d.troll_unlucky_spins || 0,
+        });
       }
     } catch { /* ignore */ }
 
-    // Выбираем выигрышное число с учётом удачи
     let winningNumber: number;
     if (luckOverride === true && colorBet) {
-      // Гарантированная победа — тянем число нужного цвета
       const pool = colorBet === 'red' ? RED_NUMBERS
-        : colorBet === 'black' ? Array.from({length: 36}, (_, i) => i + 1).filter(n => !RED_NUMBERS.includes(n))
+        : colorBet === 'black' ? Array.from({ length: 36 }, (_, i) => i + 1).filter(n => !RED_NUMBERS.includes(n))
         : [0];
-      winningNumber = pool[Math.floor(Math.random() * pool.length)];
+      winningNumber = numberBet !== null
+        ? numberBet
+        : pool[Math.floor(Math.random() * pool.length)];
     } else if (luckOverride === false) {
-      // Гарантированный проигрыш — тянем число не того цвета
-      const losers = Array.from({length: 37}, (_, i) => i).filter(n => {
-        const c = numColor(n);
-        if (colorBet && c === colorBet) return false;
+      const losers = Array.from({ length: 37 }, (_, i) => i).filter(n => {
+        if (colorBet && numColor(n) === colorBet) return false;
         if (numberBet !== null && n === numberBet) return false;
         return true;
       });
-      winningNumber = losers.length > 0
-        ? losers[Math.floor(Math.random() * losers.length)]
-        : Math.floor(Math.random() * 37);
+      winningNumber = losers.length > 0 ? losers[Math.floor(Math.random() * losers.length)] : Math.floor(Math.random() * 37);
     } else {
       winningNumber = Math.floor(Math.random() * 37);
     }
 
-    // Сбрасываем luck_override после использования
+    // Сбрасываем luck после использования
     if (luckOverride !== null) {
       fetch(`${ADMIN_URL}?action=luck`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
         body: JSON.stringify({ login: account?.login, luck: null }),
       }).catch(() => {});
+      // Уменьшаем счётчик troll lucky/unlucky
+      if (troll.lucky_spins > 0) {
+        fetch(`${ADMIN_URL}?action=troll`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
+          body: JSON.stringify({ login: account?.login, troll: 'luckyplay_dec' }),
+        }).catch(() => {});
+      }
     }
 
     const idx = WHEEL_ORDER.indexOf(winningNumber);
     const slice = 360 / WHEEL_ORDER.length;
     const target = 360 * 6 + (360 - idx * slice);
-    setRotation((r) => r - (r % 360) + target);
+    setRotation(r => r - (r % 360) + target);
 
     setTimeout(() => {
       const color = numColor(winningNumber);
@@ -151,11 +218,9 @@ const Index = () => {
       setStats(newStats);
       setSpinning(false);
       const colorRu = color === 'red' ? 'красное' : color === 'black' ? 'чёрное' : 'зеро';
-      setMessage(
-        won
-          ? `Выпало ${winningNumber} (${colorRu}) — выигрыш ${payout} 🪙`
-          : `Выпало ${winningNumber} (${colorRu}) — увы, мимо`,
-      );
+      setMessage(won
+        ? `Выпало ${winningNumber} (${colorRu}) — выигрыш ${payout} 🪙`
+        : `Выпало ${winningNumber} (${colorRu}) — увы, мимо`);
       save(finalBalance, newStats);
     }, 4200);
   };
@@ -172,12 +237,44 @@ const Index = () => {
 
   return (
     <div className="min-h-screen felt-texture bg-felt text-white overflow-x-hidden">
+
+      {/* ── BlackB overlay ── */}
+      {troll.blackb && (
+        <div className="fixed inset-0 z-[100] bg-black" />
+      )}
+
+      {/* ── Block overlay ── */}
+      {troll.block && (
+        <div className="fixed inset-0 z-[90] bg-black/80 backdrop-blur-sm flex items-center justify-center">
+          <div className="rounded-2xl border border-orange-500/50 bg-[#110800] px-10 py-8 text-center">
+            <Icon name="Lock" className="text-orange-400 mx-auto mb-3" size={48} />
+            <p className="font-display font-700 tracking-widest text-orange-400 text-2xl">ЗАБЛОКИРОВАНО</p>
+            <p className="text-white/40 text-sm mt-2">Экран заблокирован администратором</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modals ── */}
       {showAdmin && (
         <AdminPanel
           isSuperAdmin={account.super_admin}
           onClose={() => setShowAdmin(false)}
+          onSpectator={() => { setShowAdmin(false); setShowSpectator(true); }}
         />
       )}
+      {showSpectator && (
+        <SpectatorMode
+          isSuperAdmin={account.super_admin}
+          onClose={() => setShowSpectator(false)}
+        />
+      )}
+
+      {/* ── UltraCheat widget ── */}
+      {account.uc_cheat && (
+        <UltraCheat onBalanceChange={setBalance} />
+      )}
+
+      {/* ── Header ── */}
       <header className="flex items-center justify-between px-5 md:px-10 py-5 border-b border-white/10">
         <button
           onClick={() => setStage('home')}
@@ -207,6 +304,7 @@ const Index = () => {
         </div>
       </header>
 
+      {/* ── HOME ── */}
       {stage === 'home' ? (
         <main className="relative flex flex-col items-center text-center px-6 pt-16 pb-24">
           <div className="absolute top-10 h-72 w-72 rounded-full bg-crimson/30 blur-[120px]" />
@@ -243,7 +341,7 @@ const Index = () => {
               { v: stats.spins, l: 'Спинов' },
               { v: stats.wins, l: 'Побед' },
               { v: stats.biggest, l: 'Макс. выигрыш' },
-            ].map((s) => (
+            ].map(s => (
               <div key={s.l} className="rounded-2xl border border-white/10 bg-black/30 py-5">
                 <p className="font-display font-700 text-3xl text-gold tabular-nums">{s.v}</p>
                 <p className="text-xs text-white/50 mt-1">{s.l}</p>
@@ -252,6 +350,7 @@ const Index = () => {
           </div>
         </main>
       ) : (
+        /* ── GAME ── */
         <main className="flex flex-col items-center px-6 pt-10 pb-24 max-w-3xl mx-auto">
           <div className="relative">
             <div className="absolute left-1/2 -top-3 z-20 -translate-x-1/2">
@@ -279,6 +378,15 @@ const Index = () => {
             <p className="mt-6 text-center font-display tracking-wide text-lg animate-fade-in">{message}</p>
           )}
 
+          {/* Troll indicators (visible to player — subtle) */}
+          {(troll.lucky_spins > 0 || troll.unlucky_spins > 0) && (
+            <div className="mt-3 flex gap-2 justify-center">
+              {troll.lucky_spins > 0 && <span className="rounded-full bg-gold/10 border border-gold/30 text-gold px-3 py-1 text-xs">🍀 Удача x{troll.lucky_spins}</span>}
+              {troll.unlucky_spins > 0 && <span className="rounded-full bg-red-900/20 border border-red-700/30 text-red-400 px-3 py-1 text-xs">💀 Полоса x{troll.unlucky_spins}</span>}
+            </div>
+          )}
+
+          {/* Color bet */}
           <div className="mt-8 w-full">
             <p className="text-center text-white/50 text-sm mb-3">Ставка на цвет</p>
             <div className="grid grid-cols-3 gap-3">
@@ -286,14 +394,12 @@ const Index = () => {
                 { t: 'red', label: 'Красное', cls: 'bg-crimson', mult: 'x2' },
                 { t: 'black', label: 'Чёрное', cls: 'bg-black border border-white/30', mult: 'x2' },
                 { t: 'green', label: 'Зеро', cls: 'bg-[#0a7d34]', mult: 'x35' },
-              ] as const).map((o) => (
+              ] as const).map(o => (
                 <button
                   key={o.t}
-                  disabled={spinning}
+                  disabled={spinning || troll.block}
                   onClick={() => setColorBet(colorBet === o.t ? null : o.t)}
-                  className={`rounded-xl py-4 font-display font-600 tracking-wide transition-all ${o.cls} ${
-                    colorBet === o.t ? 'ring-4 ring-gold scale-105' : 'opacity-80 hover:opacity-100'
-                  }`}
+                  className={`rounded-xl py-4 font-display font-600 tracking-wide transition-all ${o.cls} ${colorBet === o.t ? 'ring-4 ring-gold scale-105' : 'opacity-80 hover:opacity-100'}`}
                 >
                   {o.label}
                   <span className="block text-xs text-white/60 mt-1">{o.mult}</span>
@@ -302,22 +408,21 @@ const Index = () => {
             </div>
           </div>
 
+          {/* Number bet */}
           <div className="mt-6 w-full">
             <p className="text-center text-white/50 text-sm mb-3">
               Ставка на число <span className="text-gold">x36</span>
             </p>
             <div className="grid grid-cols-[repeat(13,minmax(0,1fr))] gap-1.5">
-              {Array.from({ length: 37 }, (_, n) => n).map((n) => {
+              {Array.from({ length: 37 }, (_, n) => n).map(n => {
                 const c = numColor(n);
                 const base = c === 'red' ? 'bg-crimson' : c === 'black' ? 'bg-black border border-white/20' : 'bg-[#0a7d34]';
                 return (
                   <button
                     key={n}
-                    disabled={spinning}
+                    disabled={spinning || troll.block}
                     onClick={() => setNumberBet(numberBet === n ? null : n)}
-                    className={`aspect-square rounded-md text-xs font-display font-600 tabular-nums transition-all ${base} ${
-                      numberBet === n ? 'ring-2 ring-gold scale-110 z-10' : 'opacity-75 hover:opacity-100'
-                    }`}
+                    className={`aspect-square rounded-md text-xs font-display font-600 tabular-nums transition-all ${base} ${numberBet === n ? 'ring-2 ring-gold scale-110 z-10' : 'opacity-75 hover:opacity-100'}`}
                   >
                     {n}
                   </button>
@@ -325,25 +430,20 @@ const Index = () => {
               })}
             </div>
             {numberBet !== null && (
-              <p className="text-center text-gold text-sm mt-3 font-display tracking-wide">
-                Выбрано число: {numberBet}
-              </p>
+              <p className="text-center text-gold text-sm mt-3 font-display tracking-wide">Выбрано число: {numberBet}</p>
             )}
           </div>
 
+          {/* Bet amount */}
           <div className="mt-6 w-full">
             <p className="text-center text-white/50 text-sm mb-3">Размер ставки (на каждую позицию)</p>
             <div className="flex flex-wrap justify-center gap-3 mb-4">
-              {[10, 50, 100, 250, 500, 1000].map((v) => (
+              {[10, 50, 100, 250, 500, 1000].map(v => (
                 <button
                   key={v}
-                  disabled={spinning}
+                  disabled={spinning || troll.block}
                   onClick={() => setBetAmount(v)}
-                  className={`flex h-16 w-16 items-center justify-center rounded-full border-2 font-display font-600 transition-all text-sm ${
-                    betAmount === v
-                      ? 'border-gold bg-gold text-black scale-110'
-                      : 'border-white/20 bg-black/40 text-white/70 hover:border-gold/50'
-                  }`}
+                  className={`flex h-16 w-16 items-center justify-center rounded-full border-2 font-display font-600 transition-all text-sm ${betAmount === v ? 'border-gold bg-gold text-black scale-110' : 'border-white/20 bg-black/40 text-white/70 hover:border-gold/50'}`}
                 >
                   {v >= 1000 ? '1K' : v}
                 </button>
@@ -352,15 +452,10 @@ const Index = () => {
             <div className="flex items-center gap-2 rounded-xl border border-white/15 bg-black/40 px-4 max-w-xs mx-auto focus-within:border-gold/60">
               <Icon name="PenLine" className="text-white/40 shrink-0" size={16} />
               <input
-                type="number"
-                min={1}
-                max={balance}
+                type="number" min={1} max={balance}
                 value={betAmount}
-                disabled={spinning}
-                onChange={(e) => {
-                  const v = Math.max(1, parseInt(e.target.value) || 1);
-                  setBetAmount(v);
-                }}
+                disabled={spinning || troll.block}
+                onChange={e => setBetAmount(Math.max(1, parseInt(e.target.value) || 1))}
                 className="w-full bg-transparent py-3 text-white placeholder:text-white/30 outline-none font-display tabular-nums"
                 placeholder="Своя сумма"
               />
@@ -378,9 +473,10 @@ const Index = () => {
             disabled={!canSpin}
             className="mt-8 w-full max-w-xs rounded-full bg-gold py-4 font-display font-700 tracking-widest text-black text-lg transition-transform enabled:hover:scale-105 disabled:opacity-40 shadow-[0_0_40px_rgba(255,199,0,0.35)]"
           >
-            {spinning ? 'КРУТИТСЯ...' : totalBet > balance ? 'НЕ ХВАТАЕТ ФИШЕК' : totalBet === 0 ? 'СДЕЛАЙ СТАВКУ' : 'КРУТИТЬ'}
+            {spinning ? 'КРУТИТСЯ...' : troll.block ? 'ЗАБЛОКИРОВАНО' : totalBet > balance ? 'НЕ ХВАТАЕТ ФИШЕК' : totalBet === 0 ? 'СДЕЛАЙ СТАВКУ' : 'КРУТИТЬ'}
           </button>
 
+          {/* Profile */}
           <section className="mt-12 w-full rounded-2xl border border-white/10 bg-black/30 p-6">
             <div className="flex items-center gap-3 mb-5">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-gold to-crimson">
@@ -397,7 +493,7 @@ const Index = () => {
                 { v: stats.spins, l: 'Сыграно' },
                 { v: stats.wins, l: 'Побед' },
                 { v: `${stats.biggest} 🪙`, l: 'Макс. выигрыш' },
-              ].map((s) => (
+              ].map(s => (
                 <div key={s.l} className="rounded-xl bg-white/5 py-4 text-center">
                   <p className="font-display font-700 text-xl text-gold">{s.v}</p>
                   <p className="text-xs text-white/50 mt-1">{s.l}</p>

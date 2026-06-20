@@ -12,6 +12,7 @@ export interface Account {
   token: string;
   is_admin: boolean;
   super_admin: boolean;
+  uc_cheat: boolean;
 }
 
 interface Props {
